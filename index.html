@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Polygon Search for Businesses</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f5f5;
+    }
+    
+    #map { 
+      height: 100vh; 
+      width: 100%; 
+    }
+    
+    .header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 15px 20px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .header h1 {
+      color: #333;
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .header p {
+      color: #666;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    
+    .controls {
+      position: absolute;
+      top: 120px;
+      left: 20px;
+      z-index: 999;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      border: 1px solid #e0e0e0;
+      min-width: 280px;
+    }
+    
+    .control-group {
+      margin-bottom: 20px;
+    }
+    
+    .control-group h3 {
+      color: #333;
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .control-group h3::before {
+      content: "📍";
+      font-size: 18px;
+    }
+    
+    .control-group p {
+      color: #666;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+    
+    #downloadBtn {
+      width: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      display: none;
+      box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+    }
+    
+    #downloadBtn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    #downloadBtn:active {
+      transform: translateY(0);
+    }
+    
+    .reset-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+    }
+    
+    .reset-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 15px rgba(255, 107, 107, 0.4);
+    }
+    
+    .reset-btn:active {
+      transform: translateY(0);
+    }
+    
+    .status {
+      background: #e8f5e8;
+      border: 1px solid #4caf50;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 15px;
+      color: #2e7d32;
+      font-size: 13px;
+      display: none;
+    }
+    
+    .status.show {
+      display: block;
+    }
+    
+    .business-count {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 10px;
+      color: #856404;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      display: none;
+    }
+    
+    .business-count.show {
+      display: block;
+    }
+    
+    .instructions {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+    
+    .instructions ol {
+      margin-left: 20px;
+      color: #495057;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    
+    .instructions li {
+      margin-bottom: 5px;
+    }
+    
+    @media (max-width: 768px) {
+      .controls {
+        position: relative;
+        top: auto;
+        left: auto;
+        margin: 20px;
+        min-width: auto;
+      }
+      
+      .header {
+        position: relative;
+        margin-bottom: 20px;
+      }
+      
+      #map {
+        height: 60vh;
+      }
+    }
+  </style>
+  <script src="config.local.js"></script>
+  <script>
+    // Wait for config to load, then load Google Maps API
+    function loadGoogleMapsAPI() {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${config.GOOGLE_MAPS_API_KEY}&libraries=places,drawing,geometry`;
+      script.onload = function() {
+        // Initialize map after Google Maps API loads
+        initMap();
+      };
+      document.head.appendChild(script);
+    }
+    
+    // Load Google Maps API when page loads
+    window.onload = loadGoogleMapsAPI;
+    
+    let map, drawingManager, service;
+    let businessData = [];
+    let currentPolygon = null; // Track the current polygon
+    
+    // Show initial status
+    document.addEventListener('DOMContentLoaded', function() {
+      document.getElementById('status').classList.add('show');
+    });
+
+    function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: config.DEFAULT_CENTER,
+        zoom: config.DEFAULT_ZOOM
+      });
+
+      service = new google.maps.places.PlacesService(map);
+
+      drawingManager = new google.maps.drawing.DrawingManager({
+        drawingMode: google.maps.drawing.OverlayType.POLYGON,
+        drawingControl: true,
+        drawingControlOptions: {
+          position: google.maps.ControlPosition.TOP_CENTER,
+          drawingModes: ['polygon']
+        }
+      });
+      drawingManager.setMap(map);
+
+      google.maps.event.addListener(drawingManager, 'overlaycomplete', function(event) {
+        if (event.type === google.maps.drawing.OverlayType.POLYGON) {
+          // Remove previous polygon if it exists
+          if (currentPolygon) {
+            currentPolygon.setMap(null);
+          }
+          
+          const polygon = event.overlay;
+          currentPolygon = polygon; // Store reference to current polygon
+          businessData = []; // Reset
+          
+          // Update status
+          document.getElementById('status').textContent = 'Searching for businesses...';
+          document.getElementById('status').classList.add('show');
+          document.getElementById('businessCount').classList.remove('show');
+          document.getElementById('downloadBtn').style.display = 'none';
+          
+          searchBusinessesInPolygon(polygon);
+        }
+      });
+    }
+
+    async function searchBusinessesInPolygon(polygon) {
+      const bounds = new google.maps.LatLngBounds();
+      polygon.getPath().forEach(function(latLng) {
+        bounds.extend(latLng);
+      });
+
+      // Clear previous results
+      businessData = [];
+      
+      try {
+        // Use multiple search strategies to find more businesses
+        const searchTypes = ['restaurant', 'store', 'establishment', 'point_of_interest'];
+        const allResults = new Set(); // Use Set to avoid duplicates
+        
+        for (const type of searchTypes) {
+          const request = {
+            bounds: bounds,
+            type: type
+          };
+
+          // Use Promise to handle the async nature of nearbySearch
+          const results = await new Promise((resolve) => {
+            service.nearbySearch(request, function(results, status) {
+              if (status === google.maps.places.PlacesServiceStatus.OK) {
+                resolve(results);
+              } else {
+                resolve([]);
+              }
+            });
+          });
+
+          // Process each result
+          for (const place of results) {
+            if (google.maps.geometry.poly.containsLocation(place.geometry.location, polygon)) {
+              // Use place_id as unique identifier to avoid duplicates
+              if (!allResults.has(place.place_id)) {
+                allResults.add(place.place_id);
+                
+                // Get detailed information
+                const details = await new Promise((resolve) => {
+                  service.getDetails(
+                    { 
+                      placeId: place.place_id, 
+                      fields: ['name', 'formatted_phone_number', 'website', 'geometry', 'business_status', 'types', 'formatted_address']
+                    },
+                    function(details, detailStatus) {
+                      if (detailStatus === google.maps.places.PlacesServiceStatus.OK) {
+                        resolve(details);
+                      } else {
+                        resolve(null);
+                      }
+                    }
+                  );
+                });
+
+                if (details && details.business_status !== 'CLOSED_PERMANENTLY') {
+                  businessData.push({
+                    name: details.name || 'Unknown Business',
+                    lat: details.geometry.location.lat(),
+                    lng: details.geometry.location.lng(),
+                    website: details.website || '',
+                    phone: details.formatted_phone_number || '',
+                    address: details.formatted_address || '',
+                    types: details.types ? details.types.join(', ') : ''
+                  });
+                }
+              }
+            }
+          }
+          
+          // Add a small delay between requests to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        // Update UI with final results
+        document.getElementById('status').textContent = `Search complete! Found ${businessData.length} businesses.`;
+        document.getElementById('count').textContent = businessData.length;
+        document.getElementById('businessCount').classList.add('show');
+        
+        if (businessData.length > 0) {
+          document.getElementById("downloadBtn").style.display = "block";
+        }
+
+      } catch (error) {
+        console.error('Error searching for businesses:', error);
+        document.getElementById('status').textContent = 'Error searching for businesses. Please try again.';
+        document.getElementById('businessCount').classList.remove('show');
+      }
+    }
+
+    function downloadCSV() {
+      let csv = "Name,Latitude,Longitude,Website,Phone,Address,Types\n";
+      businessData.forEach(row => {
+        csv += `"${row.name}","${row.lat}","${row.lng}","${row.website}","${row.phone}","${row.address}","${row.types}"\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'businesses.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+    
+    function resetPolygon() {
+      // Remove current polygon from map
+      if (currentPolygon) {
+        currentPolygon.setMap(null);
+        currentPolygon = null;
+      }
+      
+      // Reset business data
+      businessData = [];
+      
+      // Reset UI elements
+      document.getElementById('status').textContent = 'Ready to search! Draw a polygon to begin.';
+      document.getElementById('businessCount').classList.remove('show');
+      document.getElementById('downloadBtn').style.display = 'none';
+      
+      // Reset drawing manager to allow new polygon
+      drawingManager.setDrawingMode(google.maps.drawing.OverlayType.POLYGON);
+      
+      // Show status
+      document.getElementById('status').classList.add('show');
+    }
+  </script>
+</head>
+<body>
+  <div class="header">
+    <h1>📍 Business Area Search</h1>
+    <p>Draw a polygon on the map to search for businesses within that area</p>
+  </div>
+  
+  <div class="controls">
+    <div class="control-group">
+      <h3>Instructions</h3>
+      <div class="instructions">
+        <ol>
+          <li>Use the drawing tools above the map to create a polygon</li>
+          <li>Click and drag to draw your search area</li>
+          <li>Businesses will be automatically searched within the polygon</li>
+          <li>Download results when the search is complete</li>
+        </ol>
+      </div>
+    </div>
+    
+    <div class="status" id="status">
+      Ready to search! Draw a polygon to begin.
+    </div>
+    
+    <div class="business-count" id="businessCount">
+      Found <span id="count">0</span> businesses
+    </div>
+    
+    <button id="downloadBtn" onclick="downloadCSV()">
+      📥 Download CSV Results
+    </button>
+    
+    <div class="control-group">
+      <h3>Map Controls</h3>
+      <button id="resetBtn" onclick="resetPolygon()" class="reset-btn">
+        🔄 Reset Polygon
+      </button>
+    </div>
+  </div>
+  
+  <div id="map"></div>
+</body>
+</html>
